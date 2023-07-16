@@ -1,13 +1,13 @@
 //import { AWS } from 'aws-lambda';
 
 import AWS from 'aws-sdk';
-import { S3Event } from 'aws-lambda';
+import { S3Event, S3Handler } from 'aws-lambda';
 import sharp, { AvailableFormatInfo, FormatEnum } from 'sharp';
 import { basename, extname } from 'path';
 
 const s3 = new AWS.S3();
 
-export const lambdaHandler = async (event: S3Event) => {
+export const lambdaHandler: S3Handler = async (event: S3Event) => {
     const { Records } = event;
     for (const record of Records) {
         const bucket = record.s3.bucket.name;
@@ -15,10 +15,7 @@ export const lambdaHandler = async (event: S3Event) => {
         console.log(`Processing file ${file} from bucket ${bucket}`);
         await main(bucket, file);
     }
-    return {
-        statusCode: 200,
-        body: JSON.stringify({ message: 'Instagram images processed successfully!' }),
-    };
+    return;
 };
 
 async function main(bucket: string, file: string) {

@@ -1,18 +1,16 @@
 //import { AWS } from 'aws-lambda';
 import axios from 'axios';
 import AWS from 'aws-sdk';
+import { ScheduledHandler } from 'aws-lambda';
 
 const s3 = new AWS.S3();
 const s3_bucket = 'darley-construcoes-instagram-images';
 const user_access_token = process.env.INSTAGRAM_ACCESS_TOKEN as string;
 const tags = ['industrial', 'comercial', 'residencial'];
 
-export const lambdaHandler = async () => {
+export const lambdaHandler: ScheduledHandler = async () => {
     await main();
-    return {
-        statusCode: 200,
-        body: JSON.stringify({ message: 'Instagram images processed successfully!' }),
-    };
+    return;
 };
 
 // Store media URLs in an array
