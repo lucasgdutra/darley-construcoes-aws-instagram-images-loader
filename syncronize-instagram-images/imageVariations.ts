@@ -26,10 +26,15 @@ async function main(bucket: string, file: string) {
     const formats: (keyof FormatEnum | AvailableFormatInfo)[] = ['jpg', 'webp', 'avif'];
     const sizes = [320, 480, 768, 1024, 1280, 1920];
     const image = await s3.getObject({ Bucket: bucket, Key: file }).promise();
-    interface ImageVariant {
+
+    interface Size {
         size: number;
-        format: keyof FormatEnum | AvailableFormatInfo;
         path: string;
+    }
+
+    interface ImageVariant {
+        format: keyof FormatEnum | AvailableFormatInfo;
+        sizes: Size[];
     }
 
     interface ImageData {
@@ -38,10 +43,8 @@ async function main(bucket: string, file: string) {
         variants: ImageVariant[];
     }
 
-    // Replace "Object" with "Record<string, ImageData>"
     let images: Record<string, ImageData> = {};
 
-    // Try to get existing images.json
     try {
         const existingImagesData = await s3.getObject({ Bucket: bucket, Key: 'images.json' }).promise();
         if (existingImagesData.Body) {
@@ -62,7 +65,11 @@ async function main(bucket: string, file: string) {
     }
 
     for (const format of formats) {
-        images[imageId].variants = images[imageId].variants.filter((variant) => variant.format !== format);
+        const variant: ImageVariant = {
+            format: format,
+            sizes: [],
+        };
+
         for (const size of sizes) {
             console.log(`Processing ${file} ${format} ${size}`);
             const optimizedImage = await sharp(image.Body as Buffer)
@@ -82,12 +89,13 @@ async function main(bucket: string, file: string) {
                 })
                 .promise();
 
-            images[imageId].variants.push({
+            variant.sizes.push({
                 size: size,
-                format: format,
                 path: imageKey,
             });
         }
+
+        images[imageId].variants.push(variant);
     }
 
     const imagesJson = JSON.stringify(images);
@@ -97,8 +105,8 @@ async function main(bucket: string, file: string) {
             Key: 'images.json',
             Body: imagesJson,
             Metadata: {
+                'Content-Disposition': 'attachment; filename=images.json',
                 'Content-Type': 'application/json',
-                'Content-Disposition': 'attachment; filename="images.json',
             },
         })
         .promise();
