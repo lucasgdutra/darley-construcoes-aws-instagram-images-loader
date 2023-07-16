@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  syncronize-instagram-images
+
+  Sample SAM Template for syncronize-instagram-images
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 400
+
+Resources:
+  SyncronizeInstagramImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: syncronize-instagram-images/
+      Handler: imageDownload.lambdaHandler
+      Runtime: nodejs18.x
+      Environment:
+        Variables:
+          INSTAGRAM_ACCESS_TOKEN: !Sub '{{resolve:ssm:INSTAGRAM_ACCESS_TOKEN:1}}'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/INSTAGRAM_ACCESS_TOKEN'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: 
+                - s3:ListBucket
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource: 
+                - arn:aws:s3:::darley-construcoes-instagram-images
+                - arn:aws:s3:::darley-construcoes-instagram-images/*
+      Architectures:
+        - x86_64
+      Events:
+        CronEvent:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 12 * * ? *)'
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        EntryPoints: 
+          - imageDownload.ts
+        External:
+          - sharp
+          - '@aws-sdk/*'
+
+  OptimizeInstagramImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Timeout: 900
+      MemorySize: 512
+      CodeUri: syncronize-instagram-images/
+      Handler: imageVariations.lambdaHandler
+      Runtime: nodejs18.x
+      Layers:
+        - !Ref SharpLayer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: 
+                - s3:ListBucket
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource: 
+                - arn:aws:s3:::darley-construcoes-instagram-images
+                - arn:aws:s3:::darley-construcoes-instagram-images/*
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: 
+              Ref: InstagramImagesBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: original/
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        External:
+          - sharp
+          - '@aws-sdk/*'
+        EntryPoints: 
+          - imageVariations.ts
+
+  InstagramImagesBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: darley-construcoes-instagram-images
+
+  InstagramImagesBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref InstagramImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFrontAccess
+            Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+            Action:
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${InstagramImagesBucket}/*"
+
+  SharpLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: sharp
+      ContentUri: layers/sharp/sharp-layer.zip # zip
+      CompatibleArchitectures:
+        - x86_64
+      CompatibleRuntimes:
+        - nodejs18.x
+        - nodejs16.x
+  
+  CloudFrontOAI:
+    Type: 'AWS::CloudFront::CloudFrontOriginAccessIdentity'
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: 'Access Identity for CloudFront'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt InstagramImagesBucket.DomainName
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${CloudFrontOAI}
+        Enabled: true
+        DefaultRootObject: 'images.json'
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: 'none'
+          ViewerProtocolPolicy: 'redirect-to-https'
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        HttpVersion: 'http2'
+        PriceClass: 'PriceClass_100'
