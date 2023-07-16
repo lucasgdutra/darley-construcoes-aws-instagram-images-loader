@@ -4,6 +4,7 @@ import AWS from 'aws-sdk';
 import { S3Event, S3Handler } from 'aws-lambda';
 import sharp, { AvailableFormatInfo, FormatEnum } from 'sharp';
 import { basename, extname } from 'path';
+import { ImageJsonInterface, ImageVariant } from './imageJsonInterface';
 
 const s3 = new AWS.S3();
 
@@ -24,23 +25,7 @@ async function main(bucket: string, file: string) {
     const sizes = [320, 480, 768, 1024, 1280, 1920];
     const image = await s3.getObject({ Bucket: bucket, Key: file }).promise();
 
-    interface Size {
-        size: number;
-        path: string;
-    }
-
-    interface ImageVariant {
-        format: keyof FormatEnum | AvailableFormatInfo;
-        sizes: Size[];
-    }
-
-    interface ImageData {
-        id: string;
-        description: string;
-        variants: ImageVariant[];
-    }
-
-    let images: Record<string, ImageData> = {};
+    let images: ImageJsonInterface = {};
 
     try {
         const existingImagesData = await s3.getObject({ Bucket: bucket, Key: 'images.json' }).promise();
