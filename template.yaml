@@ -60,10 +60,14 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Timeout: 900
-      MemorySize: 512
+      MemorySize: 1024
       CodeUri: syncronize-instagram-images/
       Handler: imageVariations.lambdaHandler
       Runtime: nodejs18.x
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME:
+            Ref: InstagramImagesTable
       Layers:
         - !Ref SharpLayer
       Policies:
@@ -75,9 +79,11 @@ Resources:
                 - s3:GetObject
                 - s3:PutObject
                 - s3:DeleteObject
+                - dynamodb:PutItem
               Resource:
                 - arn:aws:s3:::darley-construcoes-instagram-images
                 - arn:aws:s3:::darley-construcoes-instagram-images/*
+                - !GetAtt InstagramImagesTable.Arn
       Events:
         S3Event:
           Type: S3
@@ -161,3 +167,61 @@ Resources:
           CloudFrontDefaultCertificate: true
         HttpVersion: "http2"
         PriceClass: "PriceClass_100"
+
+  WriteImagesJsonFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: syncronize-instagram-images/
+      Handler: writeImagesJson.lambdaHandler
+      Runtime: nodejs18.x
+      Environment:
+        Variables:
+          S3_BUCKET: darley-construcoes-instagram-images
+          S3_KEY: images.json
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:ListBucket
+                - s3:GetObject
+                - s3:PutObject
+              Resource:
+                - arn:aws:s3:::darley-construcoes-instagram-images
+                - arn:aws:s3:::darley-construcoes-instagram-images/*
+      Architectures:
+        - x86_64
+      Events:
+        DynamoDBStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt InstagramImagesTable.StreamArn
+            StartingPosition: TRIM_HORIZON
+            BatchSize: 10
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: "es2020"
+        Sourcemap: true
+        EntryPoints:
+          - writeImagesJson.ts
+        External:
+          - sharp
+          - "@aws-sdk/*"
+
+  InstagramImagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: InstagramImagesTable
+      AttributeDefinitions:
+        - AttributeName: imageId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: imageId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES

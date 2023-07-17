@@ -5,8 +5,10 @@ export interface Size {
     path: string;
 }
 
+export type Formats = keyof FormatEnum | AvailableFormatInfo;
+
 export interface ImageVariant {
-    format: keyof FormatEnum | AvailableFormatInfo;
+    format: Formats;
     sizes: Size[];
 }
 

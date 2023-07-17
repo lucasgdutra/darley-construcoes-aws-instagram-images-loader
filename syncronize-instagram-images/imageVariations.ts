@@ -2,11 +2,17 @@
 
 import AWS from 'aws-sdk';
 import { S3Event, S3Handler } from 'aws-lambda';
-import sharp, { AvailableFormatInfo, FormatEnum } from 'sharp';
+import sharp from 'sharp';
 import { basename, extname } from 'path';
-import { ImageJsonInterface, ImageVariant } from './imageJsonInterface';
+import { ImageJsonInterface, ImageVariant, Formats } from './imageJsonInterface';
 
 const s3 = new AWS.S3();
+const dynamoDB = new AWS.DynamoDB.DocumentClient();
+const dynamoTableName = process.env.DYNAMO_TABLE_NAME as string;
+
+if (!dynamoTableName) {
+    throw new Error('DYNAMO_TABLE_NAME is not defined');
+}
 
 export const lambdaHandler: S3Handler = async (event: S3Event) => {
     const { Records } = event;
@@ -21,7 +27,7 @@ export const lambdaHandler: S3Handler = async (event: S3Event) => {
 
 async function main(bucket: string, file: string) {
     console.log('main initiated');
-    const formats: (keyof FormatEnum | AvailableFormatInfo)[] = ['jpg', 'webp', 'avif'];
+    const formats: Formats[] = ['jpg', 'webp', 'avif'];
     const sizes = [320, 480, 768, 1024, 1280, 1920];
     const image = await s3.getObject({ Bucket: bucket, Key: file }).promise();
 
@@ -80,18 +86,14 @@ async function main(bucket: string, file: string) {
         images[imageId].variants.push(variant);
     }
 
-    const imagesJson = JSON.stringify(images);
-    await s3
-        .upload({
-            Bucket: bucket,
-            Key: 'images.json',
-            Body: imagesJson,
-            Metadata: {
-                'Content-Disposition': 'attachment; filename=images.json',
-                'Content-Type': 'application/json',
+    await dynamoDB
+        .put({
+            TableName: dynamoTableName,
+            Item: {
+                imageId: images[imageId].id,
+                ...images[imageId],
             },
         })
         .promise();
-
-    console.log('images.json file updated and uploaded successfully');
+    console.log(`Image ${imageId} definitions saved to DynamoDB`);
 }
